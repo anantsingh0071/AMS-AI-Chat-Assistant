@@ -1,6 +1,7 @@
 streamlit
 openai
 google-generativeai
+semantic-kernel
 sentence-transformers
 faiss-cpu
 PyPDF2
