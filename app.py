@@ -9,18 +9,93 @@ import config
 import persistence
 import sidebar
 # from maf import ChatAssistantMAF
-from rag_engine import get_answer, get_retrieved_sources, verify_references, spell_check
+# from rag_engine import get_answer, get_retrieved_sources, verify_references, spell_check
+from agents.agent_manager import get_chat_agent
+# from rag_engine import get_retrieved_sources, verify_references
+# from agents.chat_assistant_agent import ChatAssistantAgent
 
-from rag_engine import get_retrieved_sources, verify_references
+from rag_engine import (
+    get_retrieved_sources,
+    verify_references,
+    
+)
 from persistence import log_interaction, save_threads, new_thread_title
+# from agents.chat_assistant_agent import ChatAssistantAgent
+from auth import (
+    login,
+    logout,
+    is_logged_in,
+    has_role,
+)
 
 # ── Setup ─────────────────────────────────────────────────────────────────
 config.configure_page()
 persistence.init_session_state()
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if "username" not in st.session_state:
+    st.session_state.username = None
+
+if "role" not in st.session_state:
+    st.session_state.role = None
+    
+
 config.render_header()
+# ======================================================
+# Authentication
+# ======================================================
+
+if not is_logged_in():
+
+    # st.title("AMS AI Chat Assistant")
+    st.subheader("🔐 User Login")
+
+    with st.form("login_form"):
+
+        username = st.text_input("Username")
+        password = st.text_input(
+            "Password",
+            type="password",
+        )
+
+        submitted = st.form_submit_button("Login")
+
+        if submitted:
+
+            if login(username, password):
+                st.success("Login successful.")
+                st.rerun()
+
+            else:
+                st.error("Invalid username or password.")
+
+    # Stop the application until the user logs in
+    st.stop()
+# ======================================================
+# Role-Based Access
+# ======================================================
+
+if not has_role(
+    "admin",
+    "marketing",
+    "sales",
+):
+    st.error("❌ You are not authorized to use this application.")
+    st.stop()
+
+    
 
 # ── Sidebar ───────────────────────────────────────────────────────────────
 sidebar.render_sidebar()
+# Show logged-in user
+st.sidebar.divider()
+st.sidebar.write(f"👤 **User:** {st.session_state.username}")
+st.sidebar.write(f"🔑 **Role:** {st.session_state.role}")
+
+if st.sidebar.button("🚪 Logout"):
+    logout()
+    st.rerun()
 
 # ── Ensure active thread ──────────────────────────────────────────────────
 if not st.session_state.threads:
@@ -71,14 +146,20 @@ if no_docs:
 
 # ── Handle message ────────────────────────────────────────────────────────
 if user_input:
-    user_id = st.session_state.get("user_id_input", "ams_user")
+    # user_id = st.session_state.get("user_id_input", "ams_user")
+    user_id = st.session_state.username
     kernel = st.session_state.get("kernel")
 
-    # Step 1 — Spell check
-    with st.spinner("✏️ Checking spelling…"):
-        corrected = spell_check(kernel, user_input)
+    agent = get_chat_agent(kernel)
 
-    spell_changed = corrected.lower().strip() != user_input.lower().strip()
+    corrected = user_input
+    spell_changed = False
+
+    # # Step 1 — Spell check
+    # with st.spinner("✏️ Checking spelling…"):
+    #     corrected = spell_check(kernel, user_input)
+
+    # spell_changed = corrected.lower().strip() != user_input.lower().strip()
 
     # Show user message
     with st.chat_message("user"):
@@ -100,7 +181,10 @@ if user_input:
     with st.chat_message("assistant"):
         with st.spinner("🔍 Searching knowledge base…"):
             history = active_thread["messages"][:-1]
-            answer  = get_answer(kernel, corrected, chat_history=history)
+            answer = agent.run(corrected, chat_history=history)
+
+            st.write("Agent Type:", type(agent))
+            st.write("Answer:", repr(answer))
 
         st.markdown(answer)
 
